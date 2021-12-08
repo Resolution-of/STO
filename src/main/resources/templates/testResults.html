@@ -225,25 +225,16 @@
                     <span></span>
                 </div>
                 <a href="/admin" class="footer__logo">
-                    <img th:src="@{/static/Logo1.png}" alt="" class="footer__logoIcon"/>
+                    <img th:src="@{/static/JMeter_Logo.png}" alt="" class="footer__logoIcon"/>
                 </a>
                 <div class="header__menuAbs">
                     <nav class="header__nav">
                         <ul class="header__list null">
                             <li class="header__item">
-                                <a href="/adminService" class="header__link link">Услуги</a>
+                                <a href="/testing" class="header__link link">Запустить тест</a>
                             </li>
                             <li class="header__item">
-                                <a href="/adminInsurance" class="header__link link">Страхование</a>
-                            </li>
-                            <li class="header__item">
-                                <a href="/adminRental" class="header__link link">Прокат авто</a>
-                            </li>
-                            <li class="header__item">
-                                <a href="/adminVacancies" class="header__link link">Вакансии</a>
-                            </li>
-                            <li class="header__item" style="margin-left: 300px;">
-                                <a class="header__link2 link" href="#add" data-toggle="modal">Добавить</a>
+                                <a href="/testResults" class="header__link link">Результаты теста</a>
                             </li>
                         </ul>
                     </nav>
@@ -253,66 +244,40 @@
         </div>
     </div>
 </header>
-<form action="#" th:action="@{/searchInsurance}" method="post" class="formSearch">
-    <input th:field="*{customer.name}" placeholder="Поиск по имени" type="search" class="inputSearch">
-    <button type="submit" class="buttonSearch"></button>
-</form>
-<div class="modal" id="add">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Добавление услуги</h2>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <form action = "#" method="post" th:action="@{/addInsurance}" th:object="${customer}">
-                <div class="modal-body">
-                    <input type="text" th:field = "*{name}" class="input servicePrices__input_mt servicePrices__input" placeholder="Имя клиента" required>
-                    <input type="text" th:field = "*{phone}"  class="input servicePrices__input_mt2 servicePrices__input" placeholder="+375 (__) ___-__-__" required>
-                    <input type="email" th:field = "*{mail}" class="input servicePrices__input_mt2 servicePrices__input" placeholder="Электронная почта" required>
-                    <div class="select servicePrices__input_mt2" style="margin-left: 130px">
-                        <select th:field = "${insurance.typeofinsurance}" required>
-                            <option value="" disabled="" selected="">Тип страхования</option>
-                            <option value="Страхование автомобиля от угона и ущерба">Страхование автомобиля от угона и ущерба</option>
-                            <option value="Обязательное страхование автогражданской ответственности">Обязательное страхование автогражданской ответственности</option>
-                            <option value="Страхование от механических и электрических поломок">Страхование от механических и электрических поломок</option>
-                            <option value="Страхование водителей и пассажиров от несчастного случая">Страхование водителей и пассажиров от несчастного случая</option>
-                            <option value="Зелёная карта">Зелёная карта</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-primary" type="submit">Сохранить</button>
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Закрыть</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 <main>
     <table class="table_blur">
         <tr>
-            <th>Клиенты</th>
-            <th>Телефон</th>
+            <th>№</th>
+            <th>Название теста</th>
+            <th>URL приложения</th>
+            <th>Количество пользователей</th>
+            <th>Ramp Up период</th>
+            <th>Длительность теста</th>
+            <th>SLA</th>
+            <th>Threshold</th>
+            <th>Think Time</th>
+            <th>Think Time Deviation</th>
             <th>Почта</th>
-            <th>Статус</th>
-            <th>Тип страхования</th>
-            <th>Изменение</th>
-            <th>Удаление</th>
+            <th>Лог теста</th>
+            <th>Посмотреть результаты тестирования</th>
         </tr>
-        <tr th:each="insurances : ${insuranceList}">
-            <td th:text="${insurances.service.customer.name}"></td>
-            <td th:text="${insurances.service.customer.phone}"></td>
-            <td th:text="${insurances.service.customer.mail}"></td>
-            <td th:text="${insurances.service.status}"></td>
-            <td th:text="${insurances.typeofinsurance}"></td>
+        <tr th:each="results : ${testDetailsList}">
+            <td th:text="${results.id}"></td>
+            <td th:text="${results.testName}"></td>
+            <td th:text="${results.testUrl}"></td>
+            <td th:text="${results.users}"></td>
+            <td th:text="${results.rampUp}"></td>
+            <td th:text="${results.duration}"></td>
+            <td th:text="${results.sla}"></td>
+            <td th:text="${results.threshold}"></td>
+            <td th:text="${results.thinkTime}"></td>
+            <td th:text="${results.thinkTimeDeviation}"></td>
+            <td th:text="${results.mail}"></td>
             <td>
-                <a th:if = "${insurances.service.status == 'open'}" th:href = "@{/beginInsurance(service=${insurances.service.service})}">Начать транзакцию</a>
-                <a th:if = "${insurances.service.status == 'in progress'}" th:href = "@{/finishInsurance(service=${insurances.service.service})}">Закончить транзакцию</a>
+                <a th:href = "@{/log(id=${results.id})}">Посмотреть лог</a>
             </td>
             <td>
-                <a th:href="@{/deleteInsurance(service=${insurances.service.service})}">Удалить</a>
+                <a th:href="@{/downloadHTML(id=${results.id})}">Результаты</a>
             </td>
         </tr>
     </table>

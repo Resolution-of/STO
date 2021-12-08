@@ -4,10 +4,10 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class CarService3Application {
+public class JMeterExecutorApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(CarService3Application.class, args);
+		SpringApplication.run(JMeterExecutorApplication.class, args);
 	}
 
 }

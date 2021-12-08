@@ -59,7 +59,7 @@ public class MainController {
         serviceRepository.save(service);
         issue.setService(service);
         issueRepository.save(issue);
-        sendMessage(customer,service,"Запись на услугу СТО");
+        //sendMessage(customer,service,"Запись на услугу СТО");
         return getHomepage();
     }
     @RequestMapping(value = "/insurance", method = RequestMethod.GET)
@@ -130,11 +130,11 @@ public class MainController {
         return "contacts";
     }
 
-    public void sendMessage(Customer customer, Service service, String subject)
+    /*public void sendMessage(Customer customer, Service service, String subject)
     {
         String message = "Ваша заявка с id: " + service.getService() + ". Принята на исполнение.\nСпасибо Вам, что воспользовались нашими услугами.";
         mailSender.send(customer.getMail(), subject, message);
-    }
+    }*/
     public Service setService(Customer customer)
     {
         Service service = new Service();

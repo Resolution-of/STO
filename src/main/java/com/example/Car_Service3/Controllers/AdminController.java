@@ -1,16 +1,37 @@
 package com.example.Car_Service3.Controllers;
 
+import org.apache.poi.hssf.usermodel.HSSFCellStyle;
+import org.apache.poi.hssf.usermodel.HSSFRow;
+import org.apache.poi.hssf.usermodel.HSSFSheet;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.*;
 import com.example.Car_Service3.Entity.*;
 import com.example.Car_Service3.Repo.*;
+import com.example.Car_Service3.Service.MailSender;
+import com.example.Car_Service3.Service.ZipUtility;
+import org.apache.poi.hssf.util.HSSFColor;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.boot.autoconfigure.jms.JmsAutoConfiguration;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.ModelAndView;
+import com.opencsv.bean.CsvToBeanBuilder;
 
+import javax.mail.MessagingException;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.servlet.http.HttpServletResponse;
+import java.io.*;
 import java.util.*;
+import java.util.zip.ZipOutputStream;
 
 @Controller
 public class AdminController {
@@ -31,14 +52,85 @@ public class AdminController {
     VacanciesRepository vacanciesRepository;
     @Autowired
     PasswordEncoder passwordEncoder;
+    @Autowired
+    TestDetailsRepository testDetailsRepository;
+    @Autowired
+    private MailSender mailSender;
     @RequestMapping(value = "/admin", method = RequestMethod.GET)
     public String getAdminPage(Model model)
     {
-        Iterable<Customer> customers = customerRepository.findAll();
-        model.addAttribute(customers);
-        model.addAttribute(new Customer());
         model.addAttribute(new Managers());
         return "admin";
+    }
+    @RequestMapping(value = "/testing", method = RequestMethod.GET)
+    public String getTestingPage(Model model)
+    {
+        model.addAttribute(new TestDetails());
+        return "startTest";
+    }
+    @RequestMapping(value = "/testResults", method = RequestMethod.GET)
+    public String getResultsPage(Model model)
+    {
+        Iterable<TestDetails> testDetails = testDetailsRepository.findAll();
+        Iterator<TestDetails> iterator = testDetails.iterator();
+        ArrayList<TestDetails> result = new ArrayList<>();
+        iterator.forEachRemaining(result::add);
+        model.addAttribute(result);
+        return "testResults";
+    }
+    @RequestMapping(value = "/log", method =  RequestMethod.GET)
+    public String getLogInfo(@RequestParam(name = "id")int testID, Model model)
+    {
+        TestDetails test = testDetailsRepository.findById(testID);
+        List<String> log = new ArrayList<>();
+        try{
+            FileInputStream fstream = new FileInputStream("C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\jmeter_"+ test.getExecutionTime() + ".log");
+            BufferedReader br = new BufferedReader(new InputStreamReader(fstream));
+            String strLine;
+            while ((strLine = br.readLine()) != null)   {
+                System.out.println (strLine);
+                log.add(strLine);
+            }
+            fstream.close();
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
+        }
+        model.addAttribute(log);
+        return "logs";
+    }
+    @RequestMapping(value = "/proceedTest", method = RequestMethod.POST)
+    public String startTest(@ModelAttribute TestDetails testDetails, Model model) throws IOException
+    {
+        java.util.Date utilDate = new java.util.Date();
+        java.sql.Date sqlDate = new java.sql.Date(utilDate.getTime());
+        testDetails.setExecutionTime(sqlDate);
+        Process process = Runtime.getRuntime().exec("C:\\jmeter\\apache-jmeter-5.4.1\\bin\\jmeter.bat -n -t" +
+                " C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\" + testDetails.getTestName() + ".jmx -JENV_URL="+ testDetails.getTestUrl() + " -JVUSERS=" + testDetails.getUsers() +
+                " -JRAMP_UP=" + testDetails.getRampUp() + " -JDURATION=" + testDetails.getDuration() + " -JTHINK_TIME=" + testDetails.getThinkTime() +
+                " -JTHINK_TIME_DEVIATION=" + testDetails.getThinkTimeDeviation() + " -j C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\jmeter_" + testDetails.getExecutionTime() + ".log -l C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\jmeter_execution_" + testDetails.getExecutionTime() + ".jtl -e -o C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\HTMLReport_"+ testDetails.getExecutionTime());
+        testDetailsRepository.save(testDetails);
+        //printResults(process);
+        return getResultsPage(model);
+    }
+    public static void printResults(Process process) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        String line = "";
+        while ((line = reader.readLine()) != null) {
+            System.out.println(line);
+        }
+    }
+    @RequestMapping(value = "/downloadHTML", method = RequestMethod.GET, produces="application/zip")
+    public void getHTMLReportPage(@RequestParam(name = "id")int testID, HttpServletResponse response) throws IOException, MessagingException
+    {
+        TestDetails test = testDetailsRepository.findById(testID);
+        sendMessage(test, "Результаты тестирования " + test.getTestName());
+        File file = new File("C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\HTMLReport_" + test.getExecutionTime());
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("application/zip");
+        response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"HTML_Report.zip\"");
+        ZipOutputStream zipOut = new ZipOutputStream(response.getOutputStream());
+        ZipUtility.zipFile(file, file.getName(), zipOut);
+        zipOut.close();
     }
     @RequestMapping(value = "/search", method = RequestMethod.POST)
     public String searchForName(@ModelAttribute Customer customer, Model model)
@@ -55,43 +147,6 @@ public class AdminController {
         managersRepository.save(managers);
         managers.insertRole();
         return getAdminPage(model);
-    }
-    @RequestMapping(value = "/adminService", method = RequestMethod.GET)
-    public String getServicePage(Model model)
-    {
-        ArrayList<Customer> customerList = new ArrayList<>(customerRepository.findCustomersByType("услуга"));
-        Iterator<Customer> iterCustomer = customerList.iterator();
-        ArrayList<Service> serviceList = new ArrayList<>();
-        ArrayList<Issue> issuesList = new ArrayList<>();
-        model.addAttribute(customerList);
-        while (iterCustomer.hasNext())
-        {
-            serviceList.add(serviceRepository.findByCustomer(iterCustomer.next()));
-        }
-        Iterator<Service> iterService = serviceList.iterator();
-        while(iterService.hasNext())
-        {
-            issuesList.add(issueRepository.findIssueByService(iterService.next()));
-        }
-        model.addAttribute(serviceList);
-        model.addAttribute(issuesList);
-        model.addAttribute(new Customer());
-        model.addAttribute(new Issue());
-        return "adminService";
-    }
-    @RequestMapping(value = "/addService", method = RequestMethod.POST)
-    public String addService(@ModelAttribute Customer customer, @ModelAttribute Issue issue, Model model)
-    {
-        customer.setType("услуга");
-        customerRepository.save(customer);
-        Service service = new Service();
-        service.setService(UUID.randomUUID().toString());
-        service.setStatus("open");
-        service.setCustomer(customer);
-        serviceRepository.save(service);
-        issue.setService(service);
-        issueRepository.save(issue);
-        return getServicePage(model);
     }
     @RequestMapping(value = "/searchService", method = RequestMethod.POST)
     public String search(@ModelAttribute Customer customer, Model model)
@@ -110,7 +165,7 @@ public class AdminController {
         model.addAttribute(issuesList);
         model.addAttribute(new Customer());
         model.addAttribute(new Issue());
-        return "adminService";
+        return "startTest";
     }
     @RequestMapping(value = "/searchInsurance", method = RequestMethod.POST)
     public String searchInsurance(@ModelAttribute Customer customer, Model model)
@@ -128,21 +183,7 @@ public class AdminController {
         model.addAttribute(insuranceList);
         model.addAttribute(new Customer());
         model.addAttribute(new Insurance());
-        return "adminInsurance";
-    }
-    @RequestMapping(value = "/addInsurance", method = RequestMethod.POST)
-    public String addInsurance(@ModelAttribute Customer customer, Insurance insurance, Model model)
-    {
-        customer.setType("страхование");
-        customerRepository.save(customer);
-        Service service = new Service();
-        service.setService(UUID.randomUUID().toString());
-        service.setStatus("open");
-        service.setCustomer(customer);
-        serviceRepository.save(service);
-        insurance.setService(service);
-        insuranceRepository.save(insurance);
-        return getInsurancePage(model);
+        return "testResults";
     }
     @RequestMapping(value = "/addRental", method = RequestMethod.POST)
     public String addRental(@ModelAttribute Customer customer, Rental rental, Model model)
@@ -207,108 +248,6 @@ public class AdminController {
         model.addAttribute(new Customer());
         model.addAttribute(new Vacancies());
         return "adminVacancies";
-    }
-    @RequestMapping(value = "/adminInsurance", method = RequestMethod.GET)
-    public String getInsurancePage(Model model)
-    {
-        ArrayList<Customer> customerList = new ArrayList<>(customerRepository.findCustomersByType("страхование"));
-        ArrayList<Service> serviceList = new ArrayList<>();
-        ArrayList<Insurance> insuranceList = new ArrayList<>();
-        model.addAttribute(customerList);
-        for(int i=0;i<customerList.size();i++)
-        {
-            serviceList.add(serviceRepository.findByCustomer(customerList.get(i)));
-            insuranceList.add(insuranceRepository.findInsuranceByService(serviceList.get(i)));
-        }
-        model.addAttribute(serviceList);
-        model.addAttribute(insuranceList);
-        model.addAttribute(new Customer());
-        model.addAttribute(new Insurance());
-        return "adminInsurance";
-    }
-    @RequestMapping(value = "/delete", method = RequestMethod.GET)
-    public String deleteService(@RequestParam(name = "service")String serviceId, Model model)
-    {
-        Service service = serviceRepository.findByService(serviceId);
-        Issue issue = issueRepository.findIssueByService(service);
-        issueRepository.delete(issue);
-        serviceRepository.delete(service);
-        customerRepository.delete(service.getCustomer());
-        return getServicePage(model);
-    }
-    @RequestMapping(value = "/deleteInsurance", method = RequestMethod.GET)
-    public String deleteInsurance(@RequestParam(name = "service")String serviceId, Model model)
-    {
-        Service service = serviceRepository.findByService(serviceId);
-        Insurance insurance = insuranceRepository.findInsuranceByService(service);
-        insuranceRepository.delete(insurance);
-        serviceRepository.delete(service);
-        customerRepository.delete(service.getCustomer());
-        return getInsurancePage(model);
-    }
-    @RequestMapping(value = "/deleteRental", method = RequestMethod.GET)
-    public String deleteRental(@RequestParam(name = "service")String serviceId, Model model)
-    {
-        Service service = serviceRepository.findByService(serviceId);
-        Rental rental = rentalRepository.findRentalByService(service);
-        rentalRepository.delete(rental);
-        serviceRepository.delete(service);
-        customerRepository.delete(service.getCustomer());
-        return getInsurancePage(model);
-    }
-    @RequestMapping(value = "/deleteVacancies", method = RequestMethod.GET)
-    public String deleteVacancies(@RequestParam(name = "service")String serviceId, Model model)
-    {
-        Service service = serviceRepository.findByService(serviceId);
-        Vacancies vacancies = vacanciesRepository.findVacanciesByService(service);
-        vacanciesRepository.delete(vacancies);
-        serviceRepository.delete(service);
-        customerRepository.delete(service.getCustomer());
-        return getInsurancePage(model);
-    }
-    @RequestMapping(value = "/beginService", method =  RequestMethod.GET)
-    public String beginService(@RequestParam(name = "service")String serviceId, Model model)
-    {
-        Service service = serviceRepository.findByService(serviceId);
-        Issue issue = issueRepository.findIssueByService(service);
-        //serviceRepository.delete(service);
-        issueRepository.delete(issue);
-        service.setStatus("in progress");
-        //serviceRepository.save(service);
-        issueRepository.save(issue);
-        return getServicePage(model);
-    }
-    @RequestMapping(value = "/finishService", method = RequestMethod.GET)
-    public String finishService(@RequestParam(name = "service")String serviceId, Model model)
-    {
-        Service service = serviceRepository.findByService(serviceId);
-        Issue issue = issueRepository.findIssueByService(service);
-        //serviceRepository.delete(service);
-        issueRepository.delete(issue);
-        service.setStatus("finish");
-        //serviceRepository.save(service);
-        issueRepository.save(issue);
-        return getServicePage(model);
-    }
-    @RequestMapping(value = "/beginInsurance", method = RequestMethod.GET)
-    public String beginInsurance(@RequestParam(name = "service")String serviceId, Model model)
-    {
-        Service service = serviceRepository.findByService(serviceId);
-        Insurance insurance = insuranceRepository.findInsuranceByService(service);
-        insuranceRepository.delete(insurance);
-        service.setStatus("in progress");
-        insuranceRepository.save(insurance);
-        return getInsurancePage(model);
-    }
-    @RequestMapping(value = "/finishInsurance", method = RequestMethod.GET)
-    public String finishInsurance(@RequestParam(name = "service")String serviceId, Model model)
-    {
-        Service service = serviceRepository.findByService(serviceId);
-        Insurance insurance = insuranceRepository.findInsuranceByService(service);
-        insuranceRepository.delete(insurance);
-        service.setStatus("finish");
-        insuranceRepository.save(insurance);
-        return getInsurancePage(model);
     }
     @RequestMapping(value = "/beginRental", method = RequestMethod.GET)
     public String beginRental(@RequestParam(name = "service")String serviceId, Model model)
@@ -424,5 +363,104 @@ public class AdminController {
             return customerList;
         }
     }
+    public void sendMessage(TestDetails test, String subject) throws IOException, MessagingException
+    {
+        String fileName = "C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\jmeter_execution_" + test.getExecutionTime() + ".jtl";
 
+        List<JMeter_Results> resultsList = new CsvToBeanBuilder(new FileReader(fileName))
+                .withType(JMeter_Results.class)
+                .build()
+                .parse();
+
+        resultsList.removeIf(result -> result.getLabel().contains("GET") || result.getLabel().contains("POST"));
+
+        HSSFWorkbook workbook = new HSSFWorkbook();
+        HSSFSheet sheet = workbook.createSheet("Results");
+
+        Map<String, Object[]> data = new TreeMap<String, Object[]>();
+        List<Integer> duration = new ArrayList<>();
+        int i = 1;
+        boolean res = false;
+        for (JMeter_Results jMeterResult : resultsList)
+        {
+            if(i==16)
+            {
+                break;
+            }
+            if(jMeterResult.getLabel().equals("label"))
+            {
+                HSSFRow rowhead = sheet.createRow((short)0);
+                rowhead.createCell(0).setCellValue("Request");
+                rowhead.createCell(1).setCellValue("Duration,s");
+                rowhead.createCell(2).setCellValue("Req,count");
+            }
+            else if(!jMeterResult.getLabel().contains("GET") && !jMeterResult.getLabel().contains("POST"))
+            {
+                duration = calculateTimings(resultsList, jMeterResult.getLabel());
+                HSSFRow row = sheet.createRow((short)i);
+                double seconds_duration = Double.valueOf(duration.get(1))/1000;
+                if(seconds_duration > test.getSla())
+                {
+                    CellStyle style = workbook.createCellStyle();
+                    style.setFillBackgroundColor(IndexedColors.RED.getIndex());
+                    row.setRowStyle(style);
+                    Cell cell1 = row.createCell(0);
+                    cell1.setCellStyle(style);
+                    cell1.setCellValue(jMeterResult.getLabel());
+                    Cell cell2 = row.createCell(1);
+                    cell2.setCellStyle(style);
+                    cell2.setCellValue(seconds_duration);
+                    Cell cell3 = row.createCell(2);
+                    cell3.setCellStyle(style);
+                    cell3.setCellValue(String.valueOf(duration.get(0)));
+                    res = true;
+                }
+                else {
+                    row.createCell(0).setCellValue(jMeterResult.getLabel());
+                    row.createCell(1).setCellValue(seconds_duration);
+                    row.createCell(2).setCellValue(String.valueOf(duration.get(0)));
+                }
+                i++;
+            }
+        }
+        FileOutputStream fileOut = new FileOutputStream("C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\HTMLReport_" + test.getExecutionTime() + "\\demo" + test.getExecutionTime() + ".xls");
+        workbook.write(fileOut);
+        fileOut.close();
+        workbook.close();
+        File file = new File("C:\\jmeter\\apache-jmeter-5.4.1\\bin\\tests\\HTMLReport_" + test.getExecutionTime() + "\\demo" + test.getExecutionTime() + ".xls");
+        FileSystemResource file1 = new FileSystemResource(file);
+        String message = "";
+        if(!res)
+        {
+            message = "Название теста: " + test.getTestName() + "\nТест URL: " + test.getTestUrl() + "\nRamp Up период: " + test.getRampUp() + " секунд\nДлительность теста: " + test.getDuration() + " секунд\nКоличество пользователей: " + test.getUsers() + "\nSLA: " + test.getSla() + " секунды\nРезультат: " + "\n1. Тестирование соответствует требованям\n2. Процент ошибок: 0.0%";
+        }
+        else {
+            message = "Название теста: " + test.getTestName() + "\nТест URL: " + test.getTestUrl() + "\nRamp Up период: " + test.getRampUp() + " секунд\nДлительность теста: " + test.getDuration() + " секунд\nКоличество пользователей: " + test.getUsers() + "\nSLA: " + test.getSla() + "секунды\nРезультат: " + "\n1. Тестирование не соответствует требованям\n2. Процент ошибок: 0.0%";
+        }
+        mailSender.sendMail(test.getMail(), subject, message, file1);
+    }
+    public static List<Integer> calculateTimings(List<JMeter_Results> jMeter_results, String label)
+    {
+        int average = 0;
+        long currentTime = 0L;
+        long nextTime = 0L;
+        int i = 1;
+        int j = 0;
+        for(JMeter_Results jMeterResult : jMeter_results)
+        {
+            if(i < jMeter_results.size()) {
+                if (jMeterResult.getLabel().equals(label)) {
+                    currentTime = Long.parseLong(jMeterResult.getTimestamp());
+                    nextTime = Long.parseLong(jMeter_results.get(i).getTimestamp());
+                    average += nextTime - currentTime;
+                    j++;
+                }
+                i++;
+            }
+        }
+        List<Integer> list = new ArrayList<>();
+        list.add(j);
+        list.add(average/j);
+        return list;
+    }
 }
